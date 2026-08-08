@@ -15,7 +15,7 @@ with col_logo:
 
 # --- TITOLO E GUIDA INTRODUTTIVA ---
 st.title("🌍 Calcolatore GHG: Dual Reporting Scope 1 & 2")
-st.caption("🚀 **Versione Beta 1.0** - *Strumento in fase di test e validazione (Non definitivo)*")
+st.caption("🚀 **Versione Beta 0.1** - *Strumento in fase di test e validazione (Non definitivo)*")
 
 with st.expander("📖 Guida ai concetti: Scope, Dual Reporting e Regole di Calcolo"):
     st.markdown("""
