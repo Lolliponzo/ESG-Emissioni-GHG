@@ -9,9 +9,9 @@ st.set_page_config(page_title="Calcolatore Emissioni GHG (Dual Reporting)", page
 col_logo, _ = st.columns([1, 4])
 with col_logo:
     try:
-        st.image("Crowe-Bompani_2.png", use_container_width=True)
+        st.image("Crowe-Bompani.png", use_container_width=True)
     except FileNotFoundError:
-        st.warning("Logo non trovato. Assicurati di aver caricato 'Crowe-Bompani_2.png' nella repository.")
+        st.warning("Logo non trovato. Assicurati di aver caricato 'Crowe-Bompani.png' nella repository.")
 
 # --- TITOLO E GUIDA INTRODUTTIVA ---
 st.title("🌍 Calcolatore GHG: Dual Reporting Scope 1 & 2")
