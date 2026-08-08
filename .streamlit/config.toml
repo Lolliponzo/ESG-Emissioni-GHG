@@ -1,25 +1,51 @@
+import streamlit as st
+import pandas as pd
+from io import BytesIO
+
+from ghg_calcolo import DB_FATTORI, UNITA_MAP, converti_in_unita_base, calcola_emissioni, riepilogo_emissioni
+
+# ------------------------------------------------------------
+# CONFIGURAZIONE PAGINA
+# ------------------------------------------------------------
+st.set_page_config(
+    page_title="Calcolatore Emissioni GHG (Dual Reporting)",
+    page_icon="🌍",
+    layout="wide",
+)
+
+# ------------------------------------------------------------
+# STILE BASE (CSS MINIMALE E MODERNO)
+# ------------------------------------------------------------
 CUSTOM_CSS = """
 <style>
     :root {
-        --primary-color: #F2A900;
-        --background-color: #FFFFFF;
-        --secondary-background-color: #F4F6F9;
-        --text-color: #1B2A41;
+        --primary-color: #F2A900;                 /* Oro Crowe */
+        --background-color: #FFFFFF;              /* Sfondo principale */
+        --secondary-background-color: #F4F6F9;    /* Riquadri e aree secondarie */
+        --text-color: #1B2A41;                    /* Testo principale */
     }
 
     body {
-        background-color: var(--background-color);
+        background-color: var(--background-color) !important;
         color: var(--text-color);
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     }
 
     .block-container {
-        padding-top: 1.5rem;
-        padding-bottom: 1.5rem;
+        padding-top: 1.25rem;
+        padding-bottom: 1.25rem;
+        background-color: var(--background-color);
     }
 
     h1, h2, h3, h4 {
         color: var(--text-color);
+    }
+
+    .app-header {
+        background-color: var(--secondary-background-color);
+        padding: 0.75rem 1.25rem;
+        border-radius: 8px;
+        margin-bottom: 1.25rem;
     }
 
     div.stButton > button:first-child {
@@ -28,6 +54,7 @@ CUSTOM_CSS = """
         border-radius: 4px;
         border: none;
         font-weight: 500;
+        padding: 0.5rem 1.25rem;
     }
 
     div.stButton > button:first-child:hover {
@@ -59,4 +86,206 @@ CUSTOM_CSS = """
     }
 </style>
 """
+
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+
+# ------------------------------------------------------------
+# LOGO E INTESTAZIONE (HEADER)
+# ------------------------------------------------------------
+header_container = st.container()
+with header_container:
+    header_col1, header_col2 = st.columns([1, 4])
+    with header_col1:
+        try:
+            st.image("Crowe-Bompani.png", width=140)
+        except FileNotFoundError:
+            st.warning(
+                "Logo non trovato. Assicurati di aver caricato 'Crowe-Bompani.png' nella repository."
+            )
+
+    with header_col2:
+        st.markdown("<div class='app-header'>", unsafe_allow_html=True)
+        st.markdown(
+            "<h2>Calcolatore Emissioni GHG: Dual Reporting Scope 1 e 2</h2>",
+            unsafe_allow_html=True,
+        )
+        st.caption("Versione Beta 0.2 - Strumento in fase di test e validazione")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+# ------------------------------------------------------------
+# SIDEBAR: GUIDA E RIFERIMENTI
+# ------------------------------------------------------------
+st.sidebar.header("Guida rapida")
+st.sidebar.markdown(
+    """
+    Questo strumento supporta la rendicontazione delle emissioni in linea con il **GHG Protocol**.
+
+    **Scope di riferimento**
+    - Scope 1: emissioni dirette da combustione di fonti di proprietà o controllate[cite: 8].
+    - Scope 2: emissioni indirette da energia acquistata (elettricità e calore)[cite: 8].
+
+    **Dual Reporting (Scope 2)**
+    - *Location-based*: utilizza fattori medi nazionali (es. ISPRA)[cite: 1].
+    - *Market-based*: utilizza fattori specifici del fornitore di energia[cite: 1].
+    """
+)
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("Note metodologiche")
+st.sidebar.markdown(
+    """
+    - Le emissioni evitate non vanno usate per compensare gli inventari Scope 1, 2 o 3, ma rendicontate separatamente[cite: 2].
+    - La CO2 biogenica è riportata come informazione aggiuntiva e non sommata agli Scope principali[cite: 8].
+    """
+)
+
+# ------------------------------------------------------------
+# STATO DI SESSIONE
+# ------------------------------------------------------------
+if "record" not in st.session_state:
+    st.session_state.record = []
+
+# ------------------------------------------------------------
+# SEZIONE: INSERIMENTO DATI
+# ------------------------------------------------------------
+st.header("Inserimento dati energetici")
+
+input_col1, input_col2, input_col3 = st.columns(3)
+
+with input_col1:
+    vettore = st.selectbox("Combustibile / Fonte energetica", list(DB_FATTORI.keys()))
+    info_vettore = DB_FATTORI[vettore]
+
+with input_col2:
+    unita_ammesse = UNITA_MAP[info_vettore["unita_fe"]].copy()
+    if "Litri" in unita_ammesse and "densita_kg_l" not in info_vettore:
+        unita_ammesse.remove("Litri")
+
+    default_unit = info_vettore.get("unita_default", unita_ammesse[0])
+    default_idx = unita_ammesse.index(default_unit) if default_unit in unita_ammesse else 0
+    unita = st.selectbox("Unità di misura del dato", unita_ammesse, index=default_idx)
+
+with input_col3:
+    valore = st.number_input(
+        f"Quantità ({unita})",
+        min_value=0.0,
+        value=0.0,
+        step=100.0,
+    )
+
+# Pulsante di calcolo evidenziato subito sotto gli input, centrato
+action_col1, action_col2, action_col3 = st.columns([3, 2, 3])
+with action_col2:
+    calcola_button = st.button("Calcola e aggiungi al registro", type="primary")
+
+st.markdown("---")
+
+# ------------------------------------------------------------
+# SEZIONE: PARAMETRI MARKET-BASED (SCOPE 2)
+# ------------------------------------------------------------
+fe_market_input = 0.0
+
+if info_vettore["scope"] == "Scope 2":
+    mb_col1, mb_col2 = st.columns([2, 1])
+
+    with mb_col1:
+        st.subheader("Parametri per il Dual Reporting (Scope 2)")
+        if vettore == "Energia Elettrica (Rete)":
+            st.markdown(
+                """
+                **Location-based:** viene applicato il fattore medio nazionale ISPRA pari a 199.6 gCO2eq/kWh (0.0001996 tCO2eq/kWh).
+
+                **Market-based:** inserire il fattore di emissione fornito dal proprio fornitore di energia (Residual Mix AIB o valore contrattuale). 
+                In caso di acquisto di energia 100% rinnovabile con Garanzie d'Origine, impostare il fattore a 0.
+                """
+            )
+        else:
+            st.markdown(
+                """
+                Per calore, vapore o raffrescamento da telereti, il fattore Location-based dipende dal dato fornito dal gestore della rete.
+
+                Inserire di seguito il fattore di emissione contrattuale in gCO2eq/kWh per la rendicontazione Market-based.
+                """
+            )
+
+    with mb_col2:
+        default_fe = 199.6 if vettore == "Energia Elettrica (Rete)" else 0.0
+        fe_market_input = st.number_input(
+            "Fattore di emissione Market-based (gCO2eq/kWh)",
+            min_value=0.0,
+            value=default_fe,
+            step=10.0,
+        )
+
+st.markdown("---")
+
+# ------------------------------------------------------------
+# AZIONE: CALCOLO E REGISTRAZIONE
+# ------------------------------------------------------------
+if calcola_button:
+    if valore <= 0:
+        st.error("Inserire una quantità maggiore di zero.")
+    else:
+        try:
+            valore_base = converti_in_unita_base(valore, unita, info_vettore)
+            em_loc, em_mkt = calcola_emissioni(valore_base, info_vettore, fe_market_input)
+
+            st.session_state.record.append({
+                "Fonte energetica": vettore,
+                "Quantità inserita": valore,
+                "Unità": unita,
+                "Valore convertito": round(valore_base, 4),
+                "Unità ISPRA": info_vettore["unita_fe"],
+                "Categoria": info_vettore["scope"],
+                "Emissioni Location-based (tCO2eq)": round(em_loc, 4),
+                "Emissioni Market-based (tCO2eq)": round(em_mkt, 4),
+            })
+
+            st.success("Dato acquisito correttamente nel registro.")
+        except Exception as e:
+            st.error(f"Errore nel calcolo: {e}")
+
+# ------------------------------------------------------------
+# SEZIONE: REPORT, RIEPILOGO E GESTIONE DATI
+# ------------------------------------------------------------
+if st.session_state.record:
+    st.header("Registro dati e report")
+
+    df = pd.DataFrame(st.session_state.record)
+    df.index = df.index + 1
+
+    st.subheader("Registro analitico")
+    st.dataframe(df, use_container_width=True)
+
+    totali = riepilogo_emissioni(df)
+
+    st.subheader("Riepilogo per categoria di emissione")
+    sum_col1, sum_col2, sum_col3 = st.columns(3)
+
+    sum_col1.metric("Totale Scope 1 (fossile)", f"{round(totali['t_scope1'], 3)} tCO2eq")
+    sum_col2.metric("Totale Scope 2 (Location-based)", f"{round(totali['t_scope2_loc'], 3)} tCO2eq")
+    sum_col3.metric("Totale Scope 2 (Market-based)", f"{round(totali['t_scope2_mkt'], 3)} tCO2eq")
+
+    st.subheader("Inventario aziendale Scope 1 + Scope 2")
+    inv_col1, inv_col2 = st.columns(2)
+
+    inv_col1.info(
+        f"Totale aziendale (Location-based): {round(totali['t_scope1'] + totali['t_scope2_loc'], 3)} tCO2eq"
+    )
+    inv_col2.success(
+        f"Totale aziendale (Market-based): {round(totali['t_scope1'] + totali['t_scope2_mkt'], 3)} tCO2eq"
+    )
+
+    st.warning(
+        f"CO2 biogenica (fuori Scope): {round(totali['t_bio'], 3)} tCO2eq. "
+        "La CO2 derivante da biomasse deve essere riportata separatamente e non sommata agli Scope principali."
+    )
+
+    st.markdown("---")
+
+    # Gestione dati (rimozione righe)
+    st.subheader("Gestione del registro")
+    manage_col1, manage_col2, manage_col3 = st.columns([3, 1, 1])
+
+    with manage_col1:
+      
