@@ -9,13 +9,33 @@ st.set_page_config(page_title="Calcolatore Emissioni GHG (Dual Reporting)", page
 col_logo, _ = st.columns([1, 4])
 with col_logo:
     try:
-        st.image("Crowe-Bompani.png", use_container_width=True)
+        st.image("Crowe-Bompani_2.png", use_container_width=True)
     except FileNotFoundError:
-        st.warning("Logo non trovato. Assicurati di aver caricato 'Crowe-Bompani.png' nella repository.")
+        st.warning("Logo non trovato. Assicurati di aver caricato 'Crowe-Bompani_2.png' nella repository.")
+
+# --- TITOLO E GUIDA INTRODUTTIVA ---
+st.title("🌍 Calcolatore GHG: Dual Reporting Scope 1 & 2")
+st.caption("🚀 **Versione Beta 1.0** - *Strumento in fase di test e validazione (Non definitivo)*")
+
+with st.expander("📖 Guida ai concetti: Scope, Dual Reporting e Regole di Calcolo"):
+    st.markdown("""
+    Questo strumento è progettato per supportare le aziende nella rendicontazione delle proprie emissioni in conformità con gli standard internazionali del **GHG Protocol**.
+    
+    **Le Categorie di Emissione (Scopes)**
+    * **Scope 1 (Emissioni Dirette):** Include le emissioni derivanti dalla combustione di combustibili da fonti di proprietà o controllate dall'azienda rendicontante[cite: 8]. Rientrano qui i consumi di gas metano per il riscaldamento o il carburante per la flotta aziendale.
+    * **Scope 2 (Emissioni Indirette da Energia):** Include le emissioni derivanti dalla combustione di combustibili per generare elettricità, vapore, riscaldamento e raffreddamento acquistati e consumati dall'azienda[cite: 8].
+    * **Scope 3 (Altre Emissioni Indirette):** Tutte le altre emissioni che si verificano nella catena del valore dell'azienda. Ad esempio, le perdite di trasmissione e distribuzione (T&D) dell'energia elettrica o l'estrazione a monte dei combustibili non rientrano nello Scope 1 o 2, ma appartengono alla Categoria 3 dello Scope 3[cite: 8].
+    
+    **Il Dual Reporting per lo Scope 2**
+    Per i consumi di energia elettrica e termica acquistata, il GHG Protocol richiede la rendicontazione secondo due metodologie parallele[cite: 1]:
+    * **Location-based method:** Riflette l'intensità media delle emissioni delle reti su cui avviene il consumo di energia[cite: 1]. Utilizza fattori di emissione medi nazionali (es. ISPRA).
+    * **Market-based method:** Riflette le emissioni derivanti dall'elettricità che le aziende hanno deliberatamente scelto (o la loro mancanza di scelta)[cite: 1]. Se l'azienda acquista energia 100% rinnovabile certificata, questo valore sarà pari a zero.
+    
+    **Emissioni Evitate (Comparative Impacts)**
+    Eventuali impatti positivi o "emissioni evitate" derivanti dai prodotti o servizi dell'azienda non devono essere utilizzati per compensare o aggiustare gli inventari Scope 1, 2 o 3, ma devono essere quantificati e rendicontati separatamente[cite: 2].
+    """)
 
 # --- DATABASE FATTORI DI EMISSIONE ---
-# Fonte FE Location-based: Tabella Parametri Standard Nazionali ISPRA
-# Fonte Densità: CDP Technical Note
 DB_FATTORI = {
     # --- SCOPE 2 ---
     "Energia Elettrica (Rete)": {"scope": "Scope 2", "unita_fe": "kWh", "fe_loc": 192.6 / 1_000_000, "unita_default": "kWh"},
@@ -66,9 +86,8 @@ def converti_in_unita_base(valore, unita_input, info):
     elif unita_base == "TJ":
         if unita_input == "GJ": valore_calcolo = valore / 1000
         elif unita_input in ["Stdm3", "Nm3"]:
-            # Gestione specifica per gas in TJ (come il Biogas)
             vol_stdm3 = valore if unita_input == "Stdm3" else valore * 1.0549
-            valore_calcolo = (vol_stdm3 / 1000) * (info.get("pci_gj_t", 0) / 1000) # Assumendo pci riferito a 1000_stdm3 per gas
+            valore_calcolo = (vol_stdm3 / 1000) * (info.get("pci_gj_t", 0) / 1000) 
         elif unita_input in ["t", "kg", "Litri"]:
             massa_ton = valore
             if unita_input == "kg": massa_ton = valore / 1000
@@ -77,21 +96,18 @@ def converti_in_unita_base(valore, unita_input, info):
 
     return valore_calcolo
 
-# --- INTERFACCIA GRAFICA ---
-st.title("🌍 Calcolatore GHG: Dual Reporting Scope 1 & 2")
-st.markdown("Strumento di rendicontazione conforme al **GHG Protocol Scope 2 Guidance**. Inserisci i consumi così come li leggi in bolletta o in fattura: il sistema farà le conversioni in automatico.")
+# --- INSERIMENTO DATI ---
+st.divider()
 
 if 'record' not in st.session_state:
     st.session_state.record = []
 
 col1, col2, col3 = st.columns(3)
 
-# 1. Scelta della Fonte
 with col1:
     vettore = st.selectbox("Combustibile / Fonte", list(DB_FATTORI.keys()))
     info_vettore = DB_FATTORI[vettore]
 
-# 2. Scelta dell'Unità di Misura (Con default intelligente)
 with col2:
     unita_ammesse = UNITA_MAP[info_vettore["unita_fe"]].copy()
     if "Litri" in unita_ammesse and "densita_kg_l" not in info_vettore:
@@ -101,23 +117,15 @@ with col2:
     default_idx = unita_ammesse.index(default_unit) if default_unit in unita_ammesse else 0
     unita = st.selectbox("In che unità hai il dato?", unita_ammesse, index=default_idx)
 
-# 3. Inserimento Quantità
 with col3:
     valore = st.number_input(f"Quantità ({unita})", min_value=0.0, value=0.0, step=100.0)
 
-# --- DUAL REPORTING INPUTS ---
+# Input condizionale per Market-based (solo Scope 2)
 fe_market_input = 0.0
 
 if info_vettore["scope"] == "Scope 2":
-    st.divider()
-    st.subheader("Dati specifici del fornitore (Market-based)")
-    
-    if vettore == "Energia Elettrica (Rete)":
-        st.info("💡 **Dual Reporting:** Il metodo Location-based (media di rete) viene calcolato automaticamente (Fattore ISPRA). Inserisci qui il fattore di emissione del tuo contratto per il metodo Market-based. Se hai acquistato il 100% di energia rinnovabile tramite Garanzie d'Origine (GO), inserisci **0**.")
-        fe_market_input = st.number_input("Fattore di Emissione Market-based (gCO2/kWh)", min_value=0.0, value=0.0, step=10.0)
-    else:
-        st.info("💡 **Reti Termiche:** Inserisci il fattore di emissione fornito dal gestore della rete di teleriscaldamento / teleraffrescamento. Sarà applicato sia al calcolo Location che Market-based.")
-        fe_market_input = st.number_input("Fattore di Emissione Fornitore (gCO2/kWh)", min_value=0.0, value=0.0, step=10.0)
+    st.info("💡 **Dati per il Market-based method:** Inserisci il fattore di emissione fornito dal tuo fornitore di energia. Se hai acquistato energia 100% rinnovabile certificata, inserisci **0**.")
+    fe_market_input = st.number_input("Fattore di Emissione del Fornitore (gCO2eq/kWh)", min_value=0.0, value=0.0, step=10.0)
 
 if st.button("➕ Calcola e Aggiungi", type="primary"):
     if valore > 0:
@@ -126,7 +134,6 @@ if st.button("➕ Calcola e Aggiungi", type="primary"):
             em_loc = 0.0
             em_mkt = 0.0
             
-            # Logica di calcolo Dual Reporting
             if info_vettore["scope"] == "Scope 2":
                 if vettore == "Energia Elettrica (Rete)":
                     em_loc = valore_base * info_vettore["fe_loc"]
@@ -136,7 +143,7 @@ if st.button("➕ Calcola e Aggiungi", type="primary"):
                     em_mkt = em_loc
             else:
                 em_loc = valore_base * info_vettore["fe"]
-                em_mkt = em_loc
+                em_mkt = em_loc # Per lo Scope 1, Location e Market coincidono
 
             st.session_state.record.append({
                 "Fonte Energetica": vettore,
@@ -167,25 +174,30 @@ if st.session_state.record:
     t_scope2_mkt = df[df['Categoria'] == 'Scope 2']['Emissioni Market-based (tCO2eq)'].sum()
     t_bio = df[df['Categoria'] == 'Fuori Scope (Biogenico)']['Emissioni Location-based (tCO2eq)'].sum()
     
+    # Metriche dettagliate
+    st.markdown("### Riepilogo per Categoria")
     col_a, col_b, col_c = st.columns(3)
     col_a.metric("Totale Scope 1 (Fossile)", f"{round(t_scope1, 3)} tCO2eq")
     col_b.metric("Totale Scope 2 (Location-based)", f"{round(t_scope2_loc, 3)} tCO2eq")
     col_c.metric("Totale Scope 2 (Market-based)", f"{round(t_scope2_mkt, 3)} tCO2eq")
     
-    st.warning(f"🌱 **CO2 Biogenica (Fuori Scope):** {round(t_bio, 3)} tCO2eq. _Nota: La CO2 derivante da biomasse deve essere riportata separatamente e non sommata agli Scope principali._")
+    # Metriche di Inventario Totale
+    st.markdown("### Inventario Totale (Scope 1 + Scope 2)")
+    col_tot1, col_tot2 = st.columns(2)
+    col_tot1.info(f"**Totale Aziendale (Location-based):** {round(t_scope1 + t_scope2_loc, 3)} tCO2eq")
+    col_tot2.success(f"**Totale Aziendale (Market-based):** {round(t_scope1 + t_scope2_mkt, 3)} tCO2eq")
+    
+    st.warning(f"🌱 **CO2 Biogenica (Fuori Scope):** {round(t_bio, 3)} tCO2eq. _La CO2 derivante da biomasse deve essere riportata separatamente e non sommata agli Scope principali._")
 
     st.divider()
     
     # --- GESTIONE E RIMOZIONE SINGOLE VOCI ---
     st.subheader("🛠️ Gestione Dati")
-    
     opzioni_eliminazione = [f"Riga {i+1}: {r['Fonte Energetica']} ({r['Quantità Inserita']} {r['Unità']})" for i, r in enumerate(st.session_state.record)]
-    
     col_mod1, col_mod2, col_mod3 = st.columns([3, 1, 1])
     
     with col_mod1:
         riga_da_eliminare = st.selectbox("Seleziona la riga specifica da cancellare:", opzioni_eliminazione)
-        
     with col_mod2:
         st.write("") 
         st.write("")
@@ -193,7 +205,6 @@ if st.session_state.record:
             indice_da_eliminare = opzioni_eliminazione.index(riga_da_eliminare)
             st.session_state.record.pop(indice_da_eliminare)
             st.rerun() 
-            
     with col_mod3:
         st.write("")
         st.write("")
@@ -217,12 +228,11 @@ if st.session_state.record:
         use_container_width=True
     )
 
-# --- FOOTER METODOLOGICO E CREDITS ---
+# --- FOOTER CREDITS E FONTI ---
 st.markdown("---")
-st.caption("ℹ️ **Note Metodologiche (GHG Protocol Scope 2 Guidance):**")
-st.caption("- **Dual Reporting**: Le emissioni derivanti dall'acquisto di energia elettrica sono riportate sia in base alle medie geografiche di rete (Location-based), sia in base alle scelte contrattuali del consumatore (Market-based).")
-st.caption("- **Perdite di Trasmissione e Distribuzione (T&D)**: I fattori di emissione applicati misurano le emissioni al punto di generazione. Le perdite di rete e le emissioni del ciclo di vita a monte NON sono incluse nello Scope 2, ma devono essere valutate e riportate separatamente nello **Scope 3 (Categoria 3)**.")
-st.caption("- **Emissioni Biogeniche**: La combustione di bioenergie produce emissioni la cui quota di CO2 deve essere documentata esternamente ai totali Scope 1 e 2 per prevenire distorsioni nella contabilizzazione climatica complessiva.")
+st.markdown("#### Fonti e Riferimenti Normativi")
+st.caption("1. **GHG Protocol Scope 2 Guidance**: Metodologia per il calcolo delle emissioni indirette da energia acquistata (Dual Reporting)[cite: 1].")
+st.caption("2. **GHG Protocol Corporate Value Chain (Scope 3) Accounting & Reporting Standard**: Metodologia per la categorizzazione delle emissioni indirette lungo la catena del valore (es. perdite T&D)[cite: 8].")
+st.caption("3. **WRI Working Paper - Estimating and Reporting the Comparative Emissions Impacts of Products**: Linee guida sulla rendicontazione separata degli impatti comparativi e delle emissioni evitate[cite: 2].")
 
-st.markdown("---")
-st.markdown("<p style='text-align: center; color: #888888; font-size: 14px;'>Strumento sviluppato da <strong>Alessio Morgante</strong> | Versione Beta 1.0</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #1B2A41; font-size: 14px; margin-top: 20px;'>Strumento sviluppato da <strong>Alessio Morgante</strong> | Versione Beta 0.1</p>", unsafe_allow_html=True)
