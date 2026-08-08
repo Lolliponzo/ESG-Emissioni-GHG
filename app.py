@@ -136,8 +136,8 @@ if st.button("➕ Calcola e Aggiungi", type="primary"):
             
             if info_vettore["scope"] == "Scope 2":
                 if vettore == "Energia Elettrica (Rete)":
-                   st.info("💡 **Dual Reporting:** Se l'azienda ha acquistato il 100% di energia rinnovabile con Garanzie d'Origine (GO), inserisci **0**. Se il contratto è standard senza certificati, lascia il valore medio preimpostato (o inserisci il dato Residual Mix AIB).")
-                    # Valore di default impostato a 192.6 gCO2/kWh (media ISPRA) invece di 0.0
+                    st.info("💡 **Dual Reporting:** Se l'azienda ha acquistato il 100% di energia rinnovabile con Garanzie d'Origine (GO), inserisci **0**. Se il contratto è standard senza certificati, lascia il valore medio preimpostato (o inserisci il dato Residual Mix AIB).")
+                    # Valore di default impostato a 199.6 gCO2/kWh (media ISPRA) invece di 0.0
                     fe_market_input = st.number_input("Fattore di Emissione Market-based (gCO2eq/kWh)", min_value=0.0, value=199.6, step=10.0)
                 else:
                     em_loc = valore_base * (fe_market_input / 1_000_000)
