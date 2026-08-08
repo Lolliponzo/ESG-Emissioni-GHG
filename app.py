@@ -225,4 +225,4 @@ st.caption("- **Perdite di Trasmissione e Distribuzione (T&D)**: I fattori di em
 st.caption("- **Emissioni Biogeniche**: La combustione di bioenergie produce emissioni la cui quota di CO2 deve essere documentata esternamente ai totali Scope 1 e 2 per prevenire distorsioni nella contabilizzazione climatica complessiva.")
 
 st.markdown("---")
-st.markdown("<p style='text-align: center; color: #888888; font-size: 14px;'>Strumento sviluppato da <strong>Alessio Morgante</strong></p> | Versione Beta 1.0", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #888888; font-size: 14px;'>Strumento sviluppato da <strong>Alessio Morgante</strong> | Versione Beta 1.0</p>", unsafe_allow_html=True)
