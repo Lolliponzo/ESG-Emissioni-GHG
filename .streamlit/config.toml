@@ -1,0 +1,15 @@
+[theme]
+# Colore primario (bottoni, elementi attivi e focus) -> Oro Crowe
+primaryColor = "#F2A900"
+
+# Colore di sfondo principale -> Bianco pulito per massima leggibilità
+backgroundColor = "#FFFFFF"
+
+# Colore di sfondo secondario (per riquadri e menu) -> Un grigio/blu chiarissimo ed elegante
+secondaryBackgroundColor = "#F4F6F9"
+
+# Colore del testo principale -> Blu Scuro Crowe
+textColor = "#1B2A41"
+
+# Font di sistema pulito e professionale
+font = "sans serif"
