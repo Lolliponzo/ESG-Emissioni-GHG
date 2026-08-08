@@ -133,18 +133,22 @@ if st.button("➕ Calcola e Aggiungi", type="primary"):
             valore_base = converti_in_unita_base(valore, unita, info_vettore)
             em_loc = 0.0
             em_mkt = 0.0
-            
+
             if info_vettore["scope"] == "Scope 2":
-                if vettore == "Energia Elettrica (Rete)":
-                    st.info("💡 **Dual Reporting:** Se l'azienda ha acquistato il 100% di energia rinnovabile con Garanzie d'Origine (GO), inserisci **0**. Se il contratto è standard senza certificati, lascia il valore medio preimpostato (o inserisci il dato Residual Mix AIB).")
-                    # Valore di default impostato a 199.6 gCO2/kWh (media ISPRA) invece di 0.0
-                    fe_market_input = st.number_input("Fattore di Emissione Market-based (gCO2eq/kWh)", min_value=0.0, value=199.6, step=10.0)
+                # Location-based: usa il fattore fisso del DB (per la rete elettrica è 199.6 gCO2/kWh)
+                if "fe_loc" in info_vettore:
+                    em_loc = valore_base * info_vettore["fe_loc"]
                 else:
+                    # Per telereti usa il fattore inserito dall'utente (gCO2eq/kWh -> tCO2eq/kWh)
                     em_loc = valore_base * (fe_market_input / 1_000_000)
-                    em_mkt = em_loc
+
+                # Market-based: usa il fattore inserito dall'utente
+                em_mkt = valore_base * (fe_market_input / 1_000_000)
+
             else:
+                # Scope 1 e Fuori Scope:Location e Market coincidono
                 em_loc = valore_base * info_vettore["fe"]
-                em_mkt = em_loc # Per lo Scope 1, Location e Market coincidono
+                em_mkt = em_loc
 
             st.session_state.record.append({
                 "Fonte Energetica": vettore,
