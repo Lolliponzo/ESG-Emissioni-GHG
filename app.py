@@ -287,6 +287,122 @@ st.caption("1. **Rapporto ISPRA 430/2026 (Tabella 1.7)**: Fattori di emissione n
 st.caption("2. **GHG Protocol Scope 2 Guidance**: Metodologia per il calcolo delle emissioni indirette da energia acquistata (Dual Reporting).")
 st.caption("3. **GHG Protocol Corporate Value Chain (Scope 3) Standard**: Standard ufficiale per le 15 categorie della catena del valore (es. Cat 5 Rifiuti, Cat 6 Business Travel)[span_3](start_span)[span_3](end_span).")
 
+st.markdown("<p style='text-align: center; color: #1B2A41; font-size: 14px; margin-top: 20px;'>Strumento sviluppato da <strong>[Alessio Morgante]</strong> | Versione Beta 1.0</p>", unsafe_allow_html=True)
+ em_mkt = em_loc
+                    nota_modifica = f"Fattore inserito per rete termica: {fe_market_input} gCO2eq/kWh"
+                    
+            elif info_vettore["scope"] == "Scope 1" or info_vettore["scope"] == "Scope 3":
+                em_loc = valore_base * info_vettore["fe"]
+                em_mkt = em_loc # Per Scope 1 e 3, Location e Market coincidono di default in questo tool
+                fe_loc_str = f"{info_vettore['fe']} tCO2e/unità base"
+                nota_modifica = f"N/A (Metodo Market-based non applicabile allo {info_vettore['scope']})"
+                
+            else: # Fuori Scope (Biogenico)
+                em_loc = valore_base * info_vettore["fe"]
+                em_mkt = em_loc
+                fe_loc_str = f"{info_vettore['fe']} tCO2e/unità base"
+                nota_modifica = "Emissioni biogeniche rendicontate separatamente"
+
+            # Aggiunta al log di sessione
+            st.session_state.record.append({
+                "Area Aziendale": macro_area,
+                "Attività / Fonte": vettore,
+                "Quantità Inserita": valore,
+                "Unità": unita,
+                "Scope": info_vettore["scope"],
+                "Categoria Normativa": info_vettore["dettaglio"],
+                "FE Location-based": fe_loc_str,
+                "FE Market-based applicato": f"{fe_market_input} gCO2eq/kWh" if info_vettore["scope"] == "Scope 2" else "-",
+                "Verifica Override Utente": nota_modifica,
+                "Emissioni Location-based (tCO2eq)": round(em_loc, 4),
+                "Emissioni Market-based (tCO2eq)": round(em_mkt, 4)
+            })
+            st.success("Dato acquisito correttamente nel registro.")
+        except Exception as e:
+            st.error(str(e))
+
+st.divider()
+
+# --- VISUALIZZAZIONE REPORT E GESTIONE RIGHE ---
+if st.session_state.record:
+    st.subheader("📊 Data Log e Report Esportabile")
+    
+    df = pd.DataFrame(st.session_state.record)
+    df.index = df.index + 1 
+    
+    # Vista compatta a schermo: nascondiamo le colonne di Audit per chiarezza visiva
+    colonne_nascoste = ["FE Location-based", "FE Market-based applicato", "Verifica Override Utente", "Area Aziendale"]
+    st.dataframe(df.drop(columns=colonne_nascoste), use_container_width=True)
+    
+    t_scope1 = df[df['Scope'] == 'Scope 1']['Emissioni Location-based (tCO2eq)'].sum()
+    t_scope2_loc = df[df['Scope'] == 'Scope 2']['Emissioni Location-based (tCO2eq)'].sum()
+    t_scope2_mkt = df[df['Scope'] == 'Scope 2']['Emissioni Market-based (tCO2eq)'].sum()
+    t_scope3 = df[df['Scope'] == 'Scope 3']['Emissioni Location-based (tCO2eq)'].sum()
+    t_bio = df[df['Scope'] == 'Fuori Scope']['Emissioni Location-based (tCO2eq)'].sum()
+    
+    # Metriche dettagliate per Scope
+    st.markdown("### Riepilogo Analitico")
+    col_a, col_b, col_c, col_d = st.columns(4)
+    col_a.metric("Totale Scope 1", f"{round(t_scope1, 3)} tCO2eq")
+    col_b.metric("Totale Scope 2 (Loc)", f"{round(t_scope2_loc, 3)} tCO2eq")
+    col_c.metric("Totale Scope 2 (Mkt)", f"{round(t_scope2_mkt, 3)} tCO2eq")
+    col_d.metric("Totale Scope 3", f"{round(t_scope3, 3)} tCO2eq")
+    
+    # Metriche di Inventario Totale
+    st.markdown("### Inventario Complessivo Aziendale")
+    col_tot1, col_tot2 = st.columns(2)
+    col_tot1.info(f"**Totale Aziendale (Location-based):** {round(t_scope1 + t_scope2_loc + t_scope3, 3)} tCO2eq")
+    col_tot2.success(f"**Totale Aziendale (Market-based):** {round(t_scope1 + t_scope2_mkt + t_scope3, 3)} tCO2eq")
+    
+    st.warning(f"🌱 **CO2 Biogenica (Fuori Scope):** {round(t_bio, 3)} tCO2eq. _La CO2 derivante da biomasse deve essere riportata separatamente e non sommata agli Scope principali._")
+
+    st.divider()
+    
+    # --- GESTIONE E RIMOZIONE SINGOLE VOCI ---
+    st.subheader("🛠️ Gestione Dati")
+    opzioni_eliminazione = [f"Riga {i+1}: {r['Attività / Fonte']} ({r['Quantità Inserita']} {r['Unità']})" for i, r in enumerate(st.session_state.record)]
+    col_mod1, col_mod2, col_mod3 = st.columns([3, 1, 1])
+    
+    with col_mod1:
+        riga_da_eliminare = st.selectbox("Seleziona la riga specifica da cancellare:", opzioni_eliminazione)
+    with col_mod2:
+        st.write("") 
+        st.write("")
+        if st.button("❌ Rimuovi Riga", use_container_width=True):
+            indice_da_eliminare = opzioni_eliminazione.index(riga_da_eliminare)
+            st.session_state.record.pop(indice_da_eliminare)
+            st.rerun() 
+    with col_mod3:
+        st.write("")
+        st.write("")
+        if st.button("🗑️ Svuota Tutto", use_container_width=True):
+            st.session_state.record = []
+            st.rerun()
+
+    st.divider()
+
+    # --- DOWNLOAD EXCEL ---
+    # Il file scaricato conterrà TUTTE le colonne, compreso il tracciato per Audit
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Inventario_GHG')
+    output.seek(0)
+    
+    st.download_button(
+        label="📥 Scarica Report Excel Completo (Incluso Tracciato Audit)", 
+        data=output, 
+        file_name="Inventario_GHG_Completo.xlsx", 
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True
+    )
+
+# --- FOOTER CREDITS E FONTI ---
+st.markdown("---")
+st.markdown("#### Fonti e Riferimenti Normativi")
+st.caption("1. **Rapporto ISPRA 430/2026 (Tabella 1.7)**: Fattori di emissione nel settore elettrico - Consumi elettrici e produzione lorda.")
+st.caption("2. **GHG Protocol Scope 2 Guidance**: Metodologia per il calcolo delle emissioni indirette da energia acquistata (Dual Reporting).")
+st.caption("3. **GHG Protocol Corporate Value Chain (Scope 3) Standard**: Standard ufficiale per le 15 categorie della catena del valore (es. Cat 5 Rifiuti, Cat 6 Business Travel)[span_3](start_span)[span_3](end_span).")
+
 st.markdown("<p style='text-align: center; color: #1B2A41; font-size: 14px; margin-top: 20px;'>Strumento sviluppato da <strong>[Nome e Cognome]</strong> | Versione Beta 1.0</p>", unsafe_allow_html=True)
 tegoria"] == "Scope 2"]["Emissioni Location-based (tCO2eq)"].sum()
     t_scope2_mkt = df[df["Categoria"] == "Scope 2"]["Emissioni Market-based (tCO2eq)"].sum()
